@@ -1,0 +1,8 @@
+*.molt
+dist/
+build/
+target/
+__pycache__/
+*.pyc
+.env
+node_modules/
