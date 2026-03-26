@@ -177,8 +177,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if !inA && !inB {
-			fmt.Fprintf(os.Stderr, "warning: slug %q not found in either bundle\n", diffPath)
-			os.Exit(2)
+			return fmt.Errorf("--path %q: slug not found in either bundle", diffPath)
 		}
 	}
 
