@@ -187,8 +187,8 @@ If validation fails, the symlink MUST be skipped with a warning — a missing sy
 
 ## Collision handling
 
-When a driver emits `{"type": "collision", "slug": "..."}`, molt pauses,
-resolves via `--rename` flag or aborts with a ready-to-run fix:
+When a driver emits `{"type": "collision", "slug": "..."}`, molt prints an
+error and exits with code 1:
 
 ```
 Error: agent slug collision — "main" already exists in dest.
@@ -196,17 +196,12 @@ Re-run with:
   molt import bundle.molt /dest --arch nanoclaw --rename main=main-imported
 ```
 
-The driver waits for either:
+Use `--rename <old>=<new>` to resolve the collision before re-running. The
+import is aborted in full — no partial state is written.
 
-```json
-{"type": "collision_resolved", "original": "main", "renamed_to": "main-imported"}
-```
-
-or
-
-```json
-{"type": "abort"}
-```
+> **Future:** Interactive collision resolution (`collision_resolved` / `abort`
+> back-and-forth) is planned for v0.3.0. The driver protocol already supports
+> the message types; molt does not yet send them.
 
 ## Error handling
 
