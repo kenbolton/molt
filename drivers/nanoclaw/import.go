@@ -66,7 +66,7 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 		writeError("DB_ERROR", fmt.Sprintf("failed to open dest DB: %v", err))
 		return
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	groupsDir := filepath.Join(destDir, "groups")
 	if err := os.MkdirAll(groupsDir, 0o755); err != nil {
@@ -83,9 +83,9 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 	// createdPaths tracks filesystem paths written so far, for cleanup on failure.
 	var createdPaths []string
 	cleanup := func() {
-		tx.Rollback()
+		_ = tx.Rollback()
 		for _, p := range createdPaths {
-			os.RemoveAll(p)
+			_ = os.RemoveAll(p)
 		}
 	}
 

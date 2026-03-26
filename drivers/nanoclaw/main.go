@@ -41,7 +41,7 @@ func main() {
 			handleExport(sourceDir)
 		case "import_request":
 			destDir, _ := msg["dest_dir"].(string)
-			bundleRaw, _ := msg["bundle"]
+			bundleRaw := msg["bundle"]
 			renamesRaw, _ := msg["renames"].(map[string]interface{})
 			renames := make(map[string]string, len(renamesRaw))
 			for k, v := range renamesRaw {

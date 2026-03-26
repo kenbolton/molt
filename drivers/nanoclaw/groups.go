@@ -19,10 +19,10 @@ const MaxSessionFileSize = 5 * 1024 * 1024 // 5 MB
 
 // GroupExportMsg is the ndjson message emitted for each group.
 type GroupExportMsg struct {
-	Type   string          `json:"type"`
-	Slug   string          `json:"slug"`
-	Config GroupConfig     `json:"config"`
-	Files  []BundleFile    `json:"files"`
+	Type   string       `json:"type"`
+	Slug   string       `json:"slug"`
+	Config GroupConfig  `json:"config"`
+	Files  []BundleFile `json:"files"`
 }
 
 // GroupConfig is the normalized group registration.

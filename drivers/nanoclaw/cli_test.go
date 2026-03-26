@@ -59,12 +59,12 @@ func readManifest(t *testing.T, bundlePath string) map[string]interface{} {
 	if err != nil {
 		t.Fatalf("readManifest: open %s: %v", bundlePath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		t.Fatalf("readManifest: gzip: %v", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -99,12 +99,12 @@ func queryGroupFolders(t *testing.T, destDir string) []string {
 	if err != nil {
 		t.Fatalf("queryGroupFolders: open DB: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	rows, err := db.Query(`SELECT folder FROM registered_groups`)
 	if err != nil {
 		t.Fatalf("queryGroupFolders: query: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var folders []string
 	for rows.Next() {
 		var f string
@@ -125,7 +125,7 @@ func queryTaskCount(t *testing.T, destDir string) int {
 	if err != nil {
 		t.Fatalf("queryTaskCount: open DB: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM scheduled_tasks`).Scan(&count); err != nil {
 		t.Fatalf("queryTaskCount: %v", err)

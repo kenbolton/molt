@@ -39,32 +39,48 @@ func setupSourceDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("open src DB: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("create schema: %v", err)
 	}
-	db.Exec(`INSERT INTO registered_groups VALUES
+	if _, err := db.Exec(`INSERT INTO registered_groups VALUES
 		('main@g.us',  'Main',  'main',  '@Andy', NULL, 0, 1, 0, NULL),
-		('other@g.us', 'Other', 'other', '@Andy', NULL, 1, 0, 0, NULL)`)
-	db.Exec(`INSERT INTO scheduled_tasks VALUES
-		('task-1', 'main', 'Daily check', 'cron', '0 9 * * *', 'group', 1, '2026-01-01T00:00:00Z', NULL)`)
+		('other@g.us', 'Other', 'other', '@Andy', NULL, 1, 0, 0, NULL)`); err != nil {
+		t.Fatalf("insert groups: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO scheduled_tasks VALUES
+		('task-1', 'main', 'Daily check', 'cron', '0 9 * * *', 'group', 1, '2026-01-01T00:00:00Z', NULL)`); err != nil {
+		t.Fatalf("insert tasks: %v", err)
+	}
 
 	// Group dirs + files
 	for _, slug := range []string{"main", "other"} {
 		gDir := filepath.Join(dir, "groups", slug)
-		os.MkdirAll(filepath.Join(gDir, "logs"), 0o755)
-		os.WriteFile(filepath.Join(gDir, "CLAUDE.md"), []byte("# "+slug+"\n"), 0o644)
+		if err := os.MkdirAll(filepath.Join(gDir, "logs"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(gDir, "CLAUDE.md"), []byte("# "+slug+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Global group
 	globalDir := filepath.Join(dir, "groups", "global")
-	os.MkdirAll(globalDir, 0o755)
-	os.WriteFile(filepath.Join(globalDir, "CLAUDE.md"), []byte("# Global\n"), 0o644)
+	if err := os.MkdirAll(globalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(globalDir, "CLAUDE.md"), []byte("# Global\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Session files
 	sessionDir := filepath.Join(dir, "data", "sessions", "main")
-	os.MkdirAll(sessionDir, 0o755)
-	os.WriteFile(filepath.Join(sessionDir, "session.jsonl"), []byte(`{"role":"user"}`+"\n"), 0o644)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "session.jsonl"), []byte(`{"role":"user"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	return dir
 }
@@ -73,16 +89,20 @@ func setupDestDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	storeDir := filepath.Join(dir, "store")
-	os.MkdirAll(storeDir, 0o755)
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	db, err := sql.Open("sqlite", filepath.Join(storeDir, "messages.db"))
 	if err != nil {
 		t.Fatalf("open dest DB: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("create dest schema: %v", err)
 	}
-	os.MkdirAll(filepath.Join(dir, "groups"), 0o755)
+	if err := os.MkdirAll(filepath.Join(dir, "groups"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	return dir
 }
 
@@ -257,7 +277,7 @@ func TestCollisionDetection(t *testing.T) {
 
 	doImport(dstDir, bundleRaw, nil)
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	buf := make([]byte, 4096)
 	n, _ := r.Read(buf)

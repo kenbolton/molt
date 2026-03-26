@@ -95,7 +95,7 @@ func readGroupRows(sourceDir string) ([]GroupRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	rows, err := db.Query(`
 		SELECT jid, name, folder, trigger_pattern, agent_name,
@@ -106,7 +106,7 @@ func readGroupRows(sourceDir string) ([]GroupRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var groups []GroupRow
 	for rows.Next() {
@@ -124,15 +124,15 @@ func readGroupRows(sourceDir string) ([]GroupRow, error) {
 
 // TaskRow represents a row from scheduled_tasks.
 type TaskRow struct {
-	ID              string
-	GroupFolder     string
-	Prompt          string
-	ScheduleType    string
-	ScheduleValue   string
-	ContextMode     string
-	Active          bool
-	CreatedAt       string
-	TargetGroupJID  *string
+	ID             string
+	GroupFolder    string
+	Prompt         string
+	ScheduleType   string
+	ScheduleValue  string
+	ContextMode    string
+	Active         bool
+	CreatedAt      string
+	TargetGroupJID *string
 }
 
 // readTaskRows reads all scheduled tasks from the DB.
@@ -141,7 +141,7 @@ func readTaskRows(sourceDir string) ([]TaskRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	rows, err := db.Query(`
 		SELECT id, group_folder, prompt, schedule_type, schedule_value,
@@ -155,7 +155,7 @@ func readTaskRows(sourceDir string) ([]TaskRow, error) {
 		}
 		return nil, fmt.Errorf("scheduled_tasks query failed: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tasks []TaskRow
 	for rows.Next() {
