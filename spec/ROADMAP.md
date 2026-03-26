@@ -19,6 +19,14 @@
 - [ ] ZeptoClaw driver (OpenClaw → ZeptoClaw already exists; extend to NanoClaw source)
 - [ ] OpenClaw driver (read existing OpenClaw installations)
 - [ ] PicoClaw driver
+- [ ] NanoBot driver (https://github.com/HKUDS/nanobot)
+- [ ] Zeroclaw driver (https://github.com/zeroclaw-labs/zeroclaw)
+- [ ] IronClaw driver (https://github.com/nearai/ironclaw)
+- [ ] LobsterAI driver (https://github.com/netease-youdao/LobsterAI)
+- [ ] TinyClaw driver (https://github.com/TinyAGI/tinyclaw)
+- [ ] Moltis driver (https://github.com/moltis-org/moltis)
+- [ ] CoPaw driver (https://github.com/agentscope-ai/CoPaw)
+- [ ] EasyClaw driver (https://github.com/gaoyangz77/easyclaw)
 
 ## v0.3.0 — Walled gardens (remote drivers)
 
