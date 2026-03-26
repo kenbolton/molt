@@ -109,13 +109,11 @@ type SessionCountDiff struct {
 // ── Command ───────────────────────────────────────────────────────────────────
 
 var diffCmd = &cobra.Command{
-	Use:   "diff <bundle1> <bundle2>",
-	Short: "Show what changed between two .molt bundles",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runDiff,
-	ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return nil, cobra.ShellCompDirectiveDefault
-	},
+	Use:               "diff <bundle1> <bundle2>",
+	Short:             "Show what changed between two .molt bundles",
+	Args:              cobra.ExactArgs(2),
+	RunE:              runDiff,
+	ValidArgsFunction: completeTwoBundles,
 }
 
 var (
@@ -133,9 +131,21 @@ func init() {
 	rootCmd.AddCommand(diffCmd)
 }
 
+// completeTwoBundles completes up to two .molt file arguments.
+func completeTwoBundles(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) <= 1 {
+		return []string{"molt"}, cobra.ShellCompDirectiveFilterFileExt
+	}
+	return nil, cobra.ShellCompDirectiveNoFileComp
+}
+
 func runDiff(cmd *cobra.Command, args []string) error {
+	cmd.SilenceUsage = true
 	if diffStat && diffPatch {
 		return fmt.Errorf("--stat and --patch are incompatible")
+	}
+	if diffStat && diffFormat == "json" {
+		return fmt.Errorf("--stat is not available with --format=json")
 	}
 
 	a, err := bundle.Load(args[0])
@@ -278,17 +288,24 @@ func computeDiff(a, b *bundle.Bundle, pathFilter string, withPatch bool) *Bundle
 
 	for id, t := range aTaskMap {
 		if _, ok := bTaskMap[id]; !ok {
-			d.TasksRemoved = append(d.TasksRemoved, t)
+			if pathFilter == "" || t.GroupSlug == pathFilter {
+				d.TasksRemoved = append(d.TasksRemoved, t)
+			}
 		}
 	}
 	for id, t := range bTaskMap {
 		if _, ok := aTaskMap[id]; !ok {
-			d.TasksAdded = append(d.TasksAdded, t)
+			if pathFilter == "" || t.GroupSlug == pathFilter {
+				d.TasksAdded = append(d.TasksAdded, t)
+			}
 		}
 	}
 	for id, at := range aTaskMap {
 		bt, ok := bTaskMap[id]
 		if !ok {
+			continue
+		}
+		if pathFilter != "" && at.GroupSlug != pathFilter && bt.GroupSlug != pathFilter {
 			continue
 		}
 		var changes []FieldChange
@@ -353,7 +370,8 @@ func computeDiff(a, b *bundle.Bundle, pathFilter string, withPatch bool) *Bundle
 			prefix := "skills/" + name + "/"
 			aSkillFiles := extractPrefix(a.Files, prefix)
 			bSkillFiles := extractPrefix(b.Files, prefix)
-			added, removed, changed := compareFiles(aSkillFiles, bSkillFiles, false)
+			// Skills show file names only — no inline patch regardless of withPatch.
+		added, removed, changed := compareFiles(aSkillFiles, bSkillFiles, false)
 			if len(added) > 0 || len(removed) > 0 || len(changed) > 0 {
 				changedNames := make([]string, len(changed))
 				for i, c := range changed {
@@ -424,6 +442,8 @@ func computeDiff(a, b *bundle.Bundle, pathFilter string, withPatch bool) *Bundle
 				d.SecretsAdded = append(d.SecretsAdded, k)
 			}
 		}
+		sort.Strings(d.SecretsAdded)
+		sort.Strings(d.SecretsRemoved)
 		d.SecretsChanged = len(d.SecretsAdded) > 0 || len(d.SecretsRemoved) > 0
 	}
 
@@ -545,6 +565,7 @@ type diffEdit struct {
 }
 
 // computeEdits computes the minimal edit script from a to b using LCS.
+// Space is O(m×n); only call this for text files of reasonable size (--patch).
 func computeEdits(a, b []string) []diffEdit {
 	m, n := len(a), len(b)
 	// DP table for LCS lengths.
@@ -1016,8 +1037,8 @@ func printDiffJSON(d *BundleDiff, pathA, pathB string) {
 		changedGroups[i] = groupDiffJSON{
 			Slug:          gd.Slug,
 			ConfigChanges: orEmpty(gd.ConfigChanges),
-			FilesAdded:    orEmptyStrings(gd.FilesAdded),
-			FilesRemoved:  orEmptyStrings(gd.FilesRemoved),
+			FilesAdded:    orEmpty(gd.FilesAdded),
+			FilesRemoved:  orEmpty(gd.FilesRemoved),
 			FilesChanged:  changedPaths,
 		}
 	}
@@ -1026,24 +1047,24 @@ func printDiffJSON(d *BundleDiff, pathA, pathB string) {
 		BundleA: filepath.Base(pathA),
 		BundleB: filepath.Base(pathB),
 		Groups: diffGroupsJSON{
-			Added:   orEmptyStrings(d.GroupsAdded),
-			Removed: orEmptyStrings(d.GroupsRemoved),
+			Added:   orEmpty(d.GroupsAdded),
+			Removed: orEmpty(d.GroupsRemoved),
 			Changed: changedGroups,
 		},
 		Tasks: diffTasksJSON{
-			Added:   orEmptyTasks(d.TasksAdded),
-			Removed: orEmptyTasks(d.TasksRemoved),
-			Changed: orEmptyTaskChanges(d.TasksChanged),
+			Added:   orEmpty(d.TasksAdded),
+			Removed: orEmpty(d.TasksRemoved),
+			Changed: orEmpty(d.TasksChanged),
 		},
 		Skills: diffSkillsJSON{
-			Added:   orEmptyStrings(d.SkillsAdded),
-			Removed: orEmptyStrings(d.SkillsRemoved),
-			Changed: orEmptySkillDiffs(d.SkillsChanged),
+			Added:   orEmpty(d.SkillsAdded),
+			Removed: orEmpty(d.SkillsRemoved),
+			Changed: orEmpty(d.SkillsChanged),
 		},
 		Sessions: diffSessionsJSON{
-			Added:        orEmptySessionRecords(d.SessionsAdded),
-			Removed:      orEmptySessionRecords(d.SessionsRemoved),
-			CountChanged: orEmptySessionDiffs(d.SessionsChanged),
+			Added:        orEmpty(d.SessionsAdded),
+			Removed:      orEmpty(d.SessionsRemoved),
+			CountChanged: orEmpty(d.SessionsChanged),
 		},
 		Identical: !d.HasDifferences(),
 	}
@@ -1053,51 +1074,9 @@ func printDiffJSON(d *BundleDiff, pathA, pathB string) {
 	_ = enc.Encode(out)
 }
 
-func orEmptyStrings(s []string) []string {
+func orEmpty[T any](s []T) []T {
 	if s == nil {
-		return []string{}
-	}
-	return s
-}
-
-func orEmpty(s []FieldChange) []FieldChange {
-	if s == nil {
-		return []FieldChange{}
-	}
-	return s
-}
-
-func orEmptyTasks(s []TaskRecord) []TaskRecord {
-	if s == nil {
-		return []TaskRecord{}
-	}
-	return s
-}
-
-func orEmptyTaskChanges(s []TaskChangeDiff) []TaskChangeDiff {
-	if s == nil {
-		return []TaskChangeDiff{}
-	}
-	return s
-}
-
-func orEmptySkillDiffs(s []SkillDiff) []SkillDiff {
-	if s == nil {
-		return []SkillDiff{}
-	}
-	return s
-}
-
-func orEmptySessionRecords(s []SessionCountRecord) []SessionCountRecord {
-	if s == nil {
-		return []SessionCountRecord{}
-	}
-	return s
-}
-
-func orEmptySessionDiffs(s []SessionCountDiff) []SessionCountDiff {
-	if s == nil {
-		return []SessionCountDiff{}
+		return []T{}
 	}
 	return s
 }

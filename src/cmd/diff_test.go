@@ -227,6 +227,22 @@ func TestComputeDiff_PathFilter(t *testing.T) {
 	}
 }
 
+func TestComputeDiff_PathFilterExcludesTasks(t *testing.T) {
+	a := newBundle("main", "other")
+	b := newBundle("main", "other")
+	setTaskJSON(b, []map[string]interface{}{
+		{"id": "task-main", "group_slug": "main", "schedule_type": "cron",
+			"schedule_value": "0 8 * * *", "prompt": "p", "active": true},
+		{"id": "task-other", "group_slug": "other", "schedule_type": "cron",
+			"schedule_value": "0 9 * * *", "prompt": "p", "active": true},
+	})
+
+	d := computeDiff(a, b, "main", false)
+	if len(d.TasksAdded) != 1 || d.TasksAdded[0].ID != "task-main" {
+		t.Errorf("path filter should only include task-main, got %v", d.TasksAdded)
+	}
+}
+
 func TestIsTextContent_Text(t *testing.T) {
 	if !isTextContent([]byte("hello world\nline 2\n")) {
 		t.Error("expected text content to be detected as text")
