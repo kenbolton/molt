@@ -3,7 +3,7 @@ SRC_DIR  := ./src
 BUILD_DIR := ./build
 PREFIX   := $(HOME)/.local
 
-.PHONY: all build build-drivers build-all clean test lint install install-drivers install-all completions install-completions
+.PHONY: all build build-drivers build-all clean test lint fmt install install-drivers install-all completions install-completions
 
 all: build
 
@@ -40,6 +40,12 @@ test:
 	@for d in drivers/*/; do \
 		echo "Testing $$(basename $$d) driver..."; \
 		(cd $$d && go test ./...) || exit 1; \
+	done
+
+fmt:
+	go fmt ./...
+	@for d in drivers/*/; do \
+		(cd $$d && go fmt ./...); \
 	done
 
 lint:
