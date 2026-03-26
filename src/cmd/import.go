@@ -17,8 +17,9 @@ Examples:
   molt import my-agents.molt ~/new-install --arch nanoclaw
   molt import my-agents.molt ~/new-install --arch zepto --rename main=main-old
   molt import my-agents.molt ~/new-install --arch nanoclaw --dry-run`,
-	Args: cobra.ExactArgs(2),
-	RunE: runImport,
+	Args:              cobra.ExactArgs(2),
+	RunE:              runImport,
+	ValidArgsFunction: completeMoltFileOrDir,
 }
 
 func runImport(cmd *cobra.Command, args []string) error {

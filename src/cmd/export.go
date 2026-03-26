@@ -21,6 +21,12 @@ Examples:
   molt export ~/nanoclaw-install --arch nanoclaw`,
 	Args: cobra.ExactArgs(1),
 	RunE: runExport,
+	ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return nil, cobra.ShellCompDirectiveFilterDirs
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 var exportOut string

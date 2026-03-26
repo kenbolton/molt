@@ -19,8 +19,9 @@ but upgrade gives you a clean, validated bundle before importing.
 Examples:
   molt upgrade old-agents.molt
   molt upgrade old-agents.molt --out upgraded.molt`,
-	Args: cobra.ExactArgs(1),
-	RunE: runUpgrade,
+	Args:              cobra.ExactArgs(1),
+	RunE:              runUpgrade,
+	ValidArgsFunction: completeMoltFile,
 }
 
 var upgradeOut string

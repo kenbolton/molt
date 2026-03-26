@@ -22,8 +22,9 @@ Useful for previewing a bundle before importing, or verifying an export.
 Examples:
   molt inspect my-agents.molt
   molt inspect backup.molt`,
-	Args: cobra.ExactArgs(1),
-	RunE: runInspect,
+	Args:              cobra.ExactArgs(1),
+	RunE:              runInspect,
+	ValidArgsFunction: completeMoltFile,
 }
 
 func init() {

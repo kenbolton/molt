@@ -28,6 +28,12 @@ Examples:
 		}
 		return cmd.Help()
 	},
+	ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+		if len(args) <= 1 {
+			return nil, cobra.ShellCompDirectiveFilterDirs
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 var (
@@ -47,6 +53,11 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagArch, "arch", "", "Target architecture (e.g. nanoclaw, zepto, openclaw, pico)")
 	rootCmd.PersistentFlags().StringArrayVar(&flagRename, "rename", nil, "Rename group slug on import: --rename old=new (repeatable)")
 	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "Show what would happen without making changes")
+
+	_ = rootCmd.RegisterFlagCompletionFunc("arch", completeArchs)
+	_ = rootCmd.RegisterFlagCompletionFunc("rename", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)

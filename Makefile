@@ -3,7 +3,7 @@ SRC_DIR  := ./src
 BUILD_DIR := ./build
 PREFIX   := $(HOME)/.local
 
-.PHONY: all build build-drivers build-all clean test lint install install-drivers install-all
+.PHONY: all build build-drivers build-all clean test lint install install-drivers install-all completions install-completions
 
 all: build
 
@@ -48,6 +48,18 @@ lint:
 		echo "Linting $$(basename $$d) driver..."; \
 		(cd $$d && golangci-lint run) || exit 1; \
 	done
+
+completions: build
+	@mkdir -p $(BUILD_DIR)/completions
+	$(BUILD_DIR)/$(BINARY) completion bash > $(BUILD_DIR)/completions/molt.bash
+	$(BUILD_DIR)/$(BINARY) completion zsh  > $(BUILD_DIR)/completions/_molt
+	$(BUILD_DIR)/$(BINARY) completion fish > $(BUILD_DIR)/completions/molt.fish
+	@echo "Completion scripts written to $(BUILD_DIR)/completions/"
+
+install-completions: build
+	$(BUILD_DIR)/$(BINARY) completion bash --install
+	$(BUILD_DIR)/$(BINARY) completion zsh  --install
+	$(BUILD_DIR)/$(BINARY) completion fish --install
 
 clean:
 	rm -rf $(BUILD_DIR)
