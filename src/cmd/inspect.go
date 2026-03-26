@@ -139,23 +139,7 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	}
 
 	// ── Sessions ─────────────────────────────────────────────────────────────
-	groupSet := map[string]bool{}
-	for _, s := range m.Groups {
-		groupSet[s] = true
-		// Also mark symlink targets so their sessions aren't flagged as orphans.
-		configKey := filepath.Join("groups", s, "config.json")
-		if configData, ok := b.Files[configKey]; ok {
-			var cfg groupConfigSlim
-			var arch archNanoclawSlim
-			_ = json.Unmarshal(configData, &cfg)
-			if len(cfg.ArchNanoclaw) > 0 {
-				_ = json.Unmarshal(cfg.ArchNanoclaw, &arch)
-			}
-			if arch.SymlinkTarget != "" {
-				groupSet[arch.SymlinkTarget] = true
-			}
-		}
-	}
+	groupSet := buildGroupSet(b.Files, m.Groups)
 
 	sessionSlugs := map[string]int{}
 	for path := range b.Files {
@@ -202,6 +186,29 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Bundle size: %s  (%d files)\n", humanBytes(totalBytes), len(b.Files))
 
 	return nil
+}
+
+// buildGroupSet returns the set of slugs that are "covered" by the bundle's
+// groups, including symlink targets. Sessions under a symlink target name are
+// not orphans — they belong to the group that symlinks to them.
+func buildGroupSet(files map[string][]byte, groups []string) map[string]bool {
+	set := map[string]bool{}
+	for _, s := range groups {
+		set[s] = true
+		configKey := filepath.Join("groups", s, "config.json")
+		if configData, ok := files[configKey]; ok {
+			var cfg groupConfigSlim
+			var arch archNanoclawSlim
+			_ = json.Unmarshal(configData, &cfg)
+			if len(cfg.ArchNanoclaw) > 0 {
+				_ = json.Unmarshal(cfg.ArchNanoclaw, &arch)
+			}
+			if arch.SymlinkTarget != "" {
+				set[arch.SymlinkTarget] = true
+			}
+		}
+	}
+	return set
 }
 
 func humanBytes(n int) string {
