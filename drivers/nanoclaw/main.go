@@ -41,7 +41,14 @@ func main() {
 		case "import_request":
 			destDir, _ := msg["dest_dir"].(string)
 			bundleRaw, _ := msg["bundle"]
-			handleImport(destDir, bundleRaw)
+			renamesRaw, _ := msg["renames"].(map[string]interface{})
+			renames := make(map[string]string, len(renamesRaw))
+			for k, v := range renamesRaw {
+				if s, ok := v.(string); ok {
+					renames[k] = s
+				}
+			}
+			handleImport(destDir, bundleRaw, renames)
 		default:
 			writeError("UNKNOWN_TYPE", fmt.Sprintf("unknown message type: %q", msgType))
 		}
@@ -111,13 +118,12 @@ func handleExport(sourceDir string) {
 	write(map[string]interface{}{"type": "export_complete", "warnings": warnings})
 }
 
-func handleImport(destDir string, bundleRaw interface{}) {
+func handleImport(destDir string, bundleRaw interface{}, renames map[string]string) {
 	if destDir == "" {
 		writeError("MISSING_DEST", "dest_dir is required for nanoclaw driver")
 		return
 	}
-	// TODO: implement import
-	writeError("NOT_IMPLEMENTED", "nanoclaw import not yet implemented")
+	doImport(destDir, bundleRaw, renames)
 }
 
 // write emits one ndjson line to stdout.

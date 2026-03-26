@@ -185,6 +185,7 @@ func (d *Driver) Import(bundlePath, destDir string, renames map[string]string, c
 		"type":     "import_request",
 		"dest_dir": destDir,
 		"config":   config,
+		"renames":  renames,
 		"bundle":   json.RawMessage(bundleData),
 	}
 	reqJSON, _ := json.Marshal(req)

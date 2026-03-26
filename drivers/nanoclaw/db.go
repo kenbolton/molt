@@ -10,13 +10,22 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// openDB opens the NanoClaw messages.db at sourceDir/store/messages.db.
+// openDB opens the NanoClaw messages.db at sourceDir/store/messages.db (read-only).
 func openDB(sourceDir string) (*sql.DB, error) {
 	dbPath := filepath.Join(sourceDir, "store", "messages.db")
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, fmt.Errorf("messages.db not found at %s", dbPath)
 	}
 	return sql.Open("sqlite", dbPath+"?mode=ro")
+}
+
+// openDBRW opens the NanoClaw messages.db at destDir/store/messages.db (read-write).
+func openDBRW(destDir string) (*sql.DB, error) {
+	dbPath := filepath.Join(destDir, "store", "messages.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, fmt.Errorf("messages.db not found at %s", dbPath)
+	}
+	return sql.Open("sqlite", dbPath)
 }
 
 // detectArchVersion reads the NanoClaw version from package.json in sourceDir.
