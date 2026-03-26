@@ -110,11 +110,19 @@ The NanoClaw driver lives in `drivers/nanoclaw/` and has its own `go.mod`. Each 
 molt export <source>            Export to bundle
   --out <file>                  Output path (default: <source-basename>.molt)
   --arch <name>                 Override source arch detection
+  --exclude <slug>              Exclude group slug from bundle (repeatable)
 
 molt import <bundle> <dest>     Import from bundle
   --arch <name>                 Target architecture (required)
   --rename <old>=<new>          Rename group slug on import (repeatable)
   --dry-run                     Show what would happen, make no changes
+
+molt diff <bundle1> <bundle2>   Compare two .molt bundles
+  --stat                        Show summary counts only, no per-item detail
+  --path <slug>                 Scope diff to one group slug
+  --format text|json            Output format (default: text)
+  --patch                       Include unified diff for changed text files (≤512KB)
+  Exit codes: 0=identical, 1=differences found, 2=error
 
 molt inspect <bundle>           Show bundle contents without importing
 molt upgrade <bundle>           Upgrade bundle to current format version
@@ -128,6 +136,7 @@ molt completion <bash|zsh|fish> Generate shell completion scripts
 molt <source> <dest>            Export + import in one step
   --arch <name>                 Target architecture (required)
   --rename <old>=<new>          Rename group slug
+  --exclude <slug>              Exclude group slug (repeatable)
   --dry-run                     Dry run
 ```
 
