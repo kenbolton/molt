@@ -33,7 +33,7 @@ func runImport(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(flagExclude) > 0 {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: --exclude has no effect on import (ignored)\n")
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: --exclude has no effect on import (ignored)\n")
 	}
 
 	renames, err := parseRenames(flagRename)
