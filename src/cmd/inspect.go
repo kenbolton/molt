@@ -142,6 +142,19 @@ func runInspect(cmd *cobra.Command, args []string) error {
 	groupSet := map[string]bool{}
 	for _, s := range m.Groups {
 		groupSet[s] = true
+		// Also mark symlink targets so their sessions aren't flagged as orphans.
+		configKey := filepath.Join("groups", s, "config.json")
+		if configData, ok := b.Files[configKey]; ok {
+			var cfg groupConfigSlim
+			var arch archNanoclawSlim
+			_ = json.Unmarshal(configData, &cfg)
+			if len(cfg.ArchNanoclaw) > 0 {
+				_ = json.Unmarshal(cfg.ArchNanoclaw, &arch)
+			}
+			if arch.SymlinkTarget != "" {
+				groupSet[arch.SymlinkTarget] = true
+			}
+		}
 	}
 
 	sessionSlugs := map[string]int{}
