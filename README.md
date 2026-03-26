@@ -97,6 +97,9 @@ make build-all
 
 # Run all tests (molt + all drivers)
 make test
+
+# Run linters (requires golangci-lint: https://golangci-lint.run/welcome/install/)
+make lint
 ```
 
 The NanoClaw driver lives in `drivers/nanoclaw/` and has its own `go.mod`. Each driver is built independently; adding a new driver is as simple as creating a `drivers/<arch>/` directory with a `go.mod` and a binary that implements the [driver protocol](spec/DRIVER.md).

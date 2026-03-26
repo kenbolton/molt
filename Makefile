@@ -3,7 +3,7 @@ SRC_DIR  := ./src
 BUILD_DIR := ./build
 PREFIX   := $(HOME)/.local
 
-.PHONY: all build build-drivers build-all clean test install install-drivers install-all
+.PHONY: all build build-drivers build-all clean test lint install install-drivers install-all
 
 all: build
 
@@ -40,6 +40,13 @@ test:
 	@for d in drivers/*/; do \
 		echo "Testing $$(basename $$d) driver..."; \
 		(cd $$d && go test ./...) || exit 1; \
+	done
+
+lint:
+	golangci-lint run
+	@for d in drivers/*/; do \
+		echo "Linting $$(basename $$d) driver..."; \
+		(cd $$d && golangci-lint run) || exit 1; \
 	done
 
 clean:
