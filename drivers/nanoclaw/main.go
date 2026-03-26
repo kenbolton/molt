@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // molt-driver-nanoclaw — molt driver for NanoClaw installations.
 // Communicates via newline-delimited JSON on stdin/stdout.
 package main
@@ -90,11 +91,12 @@ func handleExport(sourceDir string) {
 	warnings := []string{}
 
 	// 1. Export groups from DB + filesystem
-	groups, err := readGroups(sourceDir)
+	groups, groupWarnings, err := readGroups(sourceDir)
 	if err != nil {
 		writeError("DB_ERROR", fmt.Sprintf("failed to read groups: %v", err))
 		return
 	}
+	warnings = append(warnings, groupWarnings...)
 	for _, g := range groups {
 		write(g)
 	}

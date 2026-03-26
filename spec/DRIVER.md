@@ -121,6 +121,27 @@ Driver responds:
 {"type": "import_complete", "warnings": ["Session import best-effort: main"]}
 ```
 
+## Import atomicity
+
+Import SHOULD be all-or-nothing for groups and DB state. If any group's DB insert fails, the driver MUST roll back the entire import (including any filesystem paths created so far) and emit an `error` message rather than leaving a partial state.
+
+Sessions are exempt: session import is always best-effort and happens after the main transaction commits. A session import failure MUST be reported as a warning, not an error.
+
+Filesystem cleanup is best-effort — it is not guaranteed if the driver process is killed mid-import.
+
+## Two-pass import for symlinked groups
+
+When a bundle contains groups with `_arch_nanoclaw.symlink_target`, drivers MUST use a two-pass approach:
+
+- **Pass 1**: process real (non-symlink) groups — write files, insert DB rows
+- **Pass 2**: process symlink groups — after pass 1, all targets should be on disk
+
+Before creating a symlink in pass 2, drivers MUST validate:
+1. The target slug exists on disk as a real directory
+2. The target is NOT itself a symlink (catches circular chains: A→B, B→A)
+
+If validation fails, the symlink MUST be skipped with a warning — a missing symlink is recoverable; a corrupt or circular symlink is not.
+
 ## Collision handling
 
 When a driver emits `{"type": "collision", "slug": "..."}`, molt pauses,

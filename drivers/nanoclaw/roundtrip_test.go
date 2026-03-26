@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
 import (
@@ -90,7 +91,7 @@ func setupDestDir(t *testing.T) string {
 func assembleBundleRaw(t *testing.T, srcDir string) interface{} {
 	t.Helper()
 
-	groups, err := readGroups(srcDir)
+	groups, _, err := readGroups(srcDir)
 	if err != nil {
 		t.Fatalf("readGroups: %v", err)
 	}
@@ -116,7 +117,7 @@ func assembleBundleRaw(t *testing.T, srcDir string) interface{} {
 			if !slug.IsDir() {
 				continue
 			}
-			sFiles, _ := walkSessionDir(filepath.Join(sessDir, slug.Name()))
+			sFiles, _, _ := walkSessionDir(filepath.Join(sessDir, slug.Name()))
 			for _, f := range sFiles {
 				files["sessions/"+slug.Name()+"/"+f.Path] = base64.StdEncoding.EncodeToString(f.Content)
 			}

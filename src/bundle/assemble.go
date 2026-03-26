@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 package bundle
 
 import (
@@ -109,7 +110,9 @@ func (a *Assembler) addGroup(msg map[string]interface{}) error {
 			// base64 string from JSON marshal of []byte
 			decoded, err := base64.StdEncoding.DecodeString(v)
 			if err != nil {
-				decoded = []byte(v) // fallback: treat as raw text
+				a.warnings = append(a.warnings, fmt.Sprintf(
+					"groups/%s/%s: skipped (invalid base64)", slug, relPath))
+				continue
 			}
 			content = decoded
 		case []interface{}:
@@ -166,7 +169,9 @@ func (a *Assembler) addSession(msg map[string]interface{}) error {
 		}
 		decoded, err := base64.StdEncoding.DecodeString(contentStr)
 		if err != nil {
-			decoded = []byte(contentStr)
+			a.warnings = append(a.warnings, fmt.Sprintf(
+				"sessions/%s/%s: skipped (invalid base64)", slug, relPath))
+			continue
 		}
 		bundlePath := filepath.Join("sessions", slug, relPath)
 		a.b.Files[bundlePath] = decoded

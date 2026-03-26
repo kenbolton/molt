@@ -20,6 +20,7 @@ Every claw architecture has its own format for groups, memory, config, and crede
 
 ```
 molt export ~/nanoclaw-install --out ~/my-agents.molt
+molt inspect ~/my-agents.molt          # preview before importing
 molt import ~/my-agents.molt ~/new-install --arch zepto
 ```
 
@@ -38,7 +39,7 @@ molt ~/old-install ~/new-install --arch zepto
 | Global memory | ✓ | Verbatim |
 | Conversation history | ✓ | Common schema + arch extensions |
 | Scheduled tasks | ✓ | Normalized cron/interval |
-| Skills | ✓ | Arch-neutral |
+| Skills | ✗ | Not yet implemented in NanoClaw driver |
 | Sessions (Claude session cache) | ⚠️ | Best-effort, with warning |
 | Secrets / API keys | ✗ | `secrets-template.env` provided |
 | Container images | ✗ | Rebuilt by target arch |
@@ -91,6 +92,9 @@ make install-drivers # all drivers    → ~/.local/bin/molt-driver-*
 make build
 make build-drivers
 
+# Cross-compile for darwin/linux (amd64 + arm64) → ./build/
+make build-all
+
 # Run all tests (molt + all drivers)
 make test
 ```
@@ -123,9 +127,9 @@ molt <source> <dest>            Export + import in one step
 
 ## Status
 
-Early spec / pre-alpha. NanoClaw driver in active development.
+NanoClaw driver complete (v0.1.0). ZeptoClaw, OpenClaw, and PicoClaw drivers planned for v0.2.0.
 
-Drivers planned: NanoClaw, ZeptoClaw, OpenClaw, PicoClaw.
+See [spec/ROADMAP.md](spec/ROADMAP.md) for the full roadmap.
 
 Contributions welcome — especially drivers for architectures we haven't seen yet.
 

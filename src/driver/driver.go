@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Package driver implements the molt driver protocol.
 // Drivers are standalone binaries (molt-driver-<arch>) that communicate
 // via newline-delimited JSON on stdin/stdout.

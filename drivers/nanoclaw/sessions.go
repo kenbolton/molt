@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
 import (
@@ -29,10 +30,13 @@ func exportSessions(sourceDir string) []string {
 		slug := entry.Name()
 		sessionDir := filepath.Join(sessionsDir, slug)
 
-		files, err := walkSessionDir(sessionDir)
+		files, walkWarnings, err := walkSessionDir(sessionDir)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("sessions/%s: %v", slug, err))
 			continue
+		}
+		for _, w := range walkWarnings {
+			warnings = append(warnings, fmt.Sprintf("sessions/%s/%s", slug, w))
 		}
 		if len(files) == 0 {
 			continue
@@ -48,18 +52,27 @@ func exportSessions(sourceDir string) []string {
 	return warnings
 }
 
-// walkSessionDir reads a session directory, skipping large files.
-func walkSessionDir(dir string) ([]BundleFile, error) {
+// walkSessionDir reads a session directory, skipping files above MaxSessionFileSize.
+// Returns files, warnings, and any walk error.
+func walkSessionDir(dir string) ([]BundleFile, []string, error) {
 	var files []BundleFile
+	var warnings []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.Size() > 5*1024*1024 {
-			return nil // skip files > 5MB
+		if err != nil {
+			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)
+		if info.Size() > MaxSessionFileSize {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: skipped (%.1f MB exceeds %d MB limit)",
+				rel, float64(info.Size())/(1024*1024), MaxSessionFileSize/(1024*1024),
+			))
+			return nil
+		}
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil
@@ -67,5 +80,5 @@ func walkSessionDir(dir string) ([]BundleFile, error) {
 		files = append(files, BundleFile{Path: rel, Content: content})
 		return nil
 	})
-	return files, err
+	return files, warnings, err
 }

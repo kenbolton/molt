@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Package bundle implements the .molt bundle format.
 // A bundle is a gzipped tar archive with a manifest.json and predictable layout.
 package bundle
@@ -29,7 +30,7 @@ type Manifest struct {
 	ImportedTo  *ArchInfo `json:"imported_to"`
 	Groups      []string `json:"groups"`
 	Warnings    []string `json:"warnings"`
-	Checksums   map[string]string `json:"checksums"`
+	Checksums   map[string]string `json:"checksums,omitempty"`
 }
 
 // ArchInfo describes a claw architecture install.
@@ -53,7 +54,6 @@ func New(sourceArch, sourceVersion string) *Bundle {
 				Hostname:    hostname,
 			},
 			Warnings:  []string{},
-			Checksums: map[string]string{},
 		},
 		Files: map[string][]byte{},
 	}

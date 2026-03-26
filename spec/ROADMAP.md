@@ -1,17 +1,18 @@
 # Molt Roadmap
 
-## v0.1.0 — NanoClaw foundation
+## v0.1.0 — NanoClaw foundation ✓
 
-- [ ] Core molt binary (Go)
-- [ ] Bundle format implemented
-- [ ] `molt export` — NanoClaw source driver
-- [ ] `molt import` — NanoClaw target driver
-- [ ] `molt upgrade` — bundle version migration
-- [ ] `molt archs` — list installed drivers
-- [ ] Slug collision detection + `--rename` flag
-- [ ] `secrets-template.env` generation
-- [ ] `--dry-run` support
-- [ ] Session best-effort export
+- [x] Core molt binary (Go)
+- [x] Bundle format implemented
+- [x] `molt export` — NanoClaw source driver
+- [x] `molt import` — NanoClaw target driver
+- [x] `molt inspect` — preview bundle contents
+- [x] `molt upgrade` — bundle version migration
+- [x] `molt archs` — list installed drivers
+- [x] Slug collision detection + `--rename` flag
+- [x] `secrets-template.env` generation
+- [x] `--dry-run` support
+- [x] Session best-effort export
 
 ## v0.2.0 — Cross-arch (local)
 

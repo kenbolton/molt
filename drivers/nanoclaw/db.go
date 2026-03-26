@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
 import (
@@ -6,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -25,7 +27,7 @@ func openDBRW(destDir string) (*sql.DB, error) {
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, fmt.Errorf("messages.db not found at %s", dbPath)
 	}
-	return sql.Open("sqlite", dbPath)
+	return sql.Open("sqlite", dbPath+"?_busy_timeout=5000")
 }
 
 // detectArchVersion reads the NanoClaw version from package.json in sourceDir.
@@ -148,8 +150,10 @@ func readTaskRows(sourceDir string) ([]TaskRow, error) {
 		ORDER BY created_at
 	`)
 	if err != nil {
-		// Table may not exist in older NanoClaw versions
-		return nil, nil
+		if strings.Contains(err.Error(), "no such table") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scheduled_tasks query failed: %w", err)
 	}
 	defer rows.Close()
 

@@ -46,14 +46,13 @@ bundle.molt (gzipped tar)
     "imported_at": "2026-03-26T09:00:00Z"
   },
   "groups": ["main", "kycsitescan", "tanglewylde"],
-  "warnings": [],
-  "checksums": {
-    "groups/main/config.json": "sha256:abc123..."
-  }
+  "warnings": []
 }
 ```
 
 `imported_to` is added by the driver on import. A bundle that has never been imported has `imported_to: null`.
+
+`checksums` is reserved for future use. Implementations MUST ignore this field in 0.1.x bundles.
 
 ## groups/<slug>/config.json
 
@@ -139,6 +138,20 @@ CLAUDE_CODE_OAUTH_TOKEN=
 SIGNAL_ACCOUNT=
 GITHUB_TOKEN=
 ```
+
+## File content encoding
+
+All file content in bundle messages (`group`, `session`) is base64-encoded (`encoding/base64` standard encoding). This applies to both the wire format (driver → assembler) and the in-bundle representation (`Files` map). Decoders MUST reject invalid base64 — falling back to treating content as raw text risks binary file corruption.
+
+## Limits
+
+Per-driver file size caps. Files exceeding these limits are skipped with a warning in `export_complete.warnings`; they are not included in the bundle.
+
+| Driver | Group files | Session files |
+|--------|------------|---------------|
+| nanoclaw | 10 MB | 5 MB |
+
+Other drivers MAY define their own limits. Consumers should treat missing files as expected when warnings are present.
 
 ## Versioning
 

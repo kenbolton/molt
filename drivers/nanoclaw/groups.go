@@ -1,11 +1,21 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 )
+
+// MaxGroupFileSize is the maximum file size included in a group export.
+// Files exceeding this limit are skipped with a warning.
+const MaxGroupFileSize = 10 * 1024 * 1024 // 10 MB
+
+// MaxSessionFileSize is the maximum file size included in a session export.
+// Files exceeding this limit are skipped with a warning.
+const MaxSessionFileSize = 5 * 1024 * 1024 // 5 MB
 
 // GroupExportMsg is the ndjson message emitted for each group.
 type GroupExportMsg struct {
@@ -35,14 +45,16 @@ type BundleFile struct {
 }
 
 // readGroups reads all groups from the DB and their files from disk.
-func readGroups(sourceDir string) ([]GroupExportMsg, error) {
+// Returns export messages, any file-level warnings, and an error.
+func readGroups(sourceDir string) ([]GroupExportMsg, []string, error) {
 	rows, err := readGroupRows(sourceDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	groupsDir := filepath.Join(sourceDir, "groups")
 	var msgs []GroupExportMsg
+	var warnings []string
 
 	for _, row := range rows {
 		config := GroupConfig{
@@ -77,7 +89,11 @@ func readGroups(sourceDir string) ([]GroupExportMsg, error) {
 			}
 			// files stays nil — no content to export for symlinked dirs
 		} else {
-			files, _ = walkGroupDir(groupDir)
+			var walkWarnings []string
+			files, walkWarnings, _ = walkGroupDir(groupDir)
+			for _, w := range walkWarnings {
+				warnings = append(warnings, fmt.Sprintf("%s/%s", row.Folder, w))
+			}
 		}
 		archJSON, _ := json.Marshal(archData)
 		config.ArchNanoclaw = archJSON
@@ -92,7 +108,10 @@ func readGroups(sourceDir string) ([]GroupExportMsg, error) {
 
 	// Add global group if it exists
 	globalDir := filepath.Join(groupsDir, "global")
-	if files, err := walkGroupDir(globalDir); err == nil {
+	if files, walkWarnings, err := walkGroupDir(globalDir); err == nil {
+		for _, w := range walkWarnings {
+			warnings = append(warnings, fmt.Sprintf("global/%s", w))
+		}
 		msgs = append(msgs, GroupExportMsg{
 			Type: "group",
 			Slug: "global",
@@ -104,17 +123,19 @@ func readGroups(sourceDir string) ([]GroupExportMsg, error) {
 		})
 	}
 
-	return msgs, nil
+	return msgs, warnings, nil
 }
 
 // walkGroupDir returns all files in a group directory as BundleFiles.
-// Skips logs/, .git/, and binary files above 10MB.
-func walkGroupDir(dir string) ([]BundleFile, error) {
+// Skips logs/, .git/, and agent-runner-src/. Files above MaxGroupFileSize are
+// skipped with a warning. Returns files, warnings, and any walk error.
+func walkGroupDir(dir string) ([]BundleFile, []string, error) {
 	if _, err := os.Stat(dir); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var files []BundleFile
+	var warnings []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip unreadable entries
@@ -129,8 +150,15 @@ func walkGroupDir(dir string) ([]BundleFile, error) {
 
 		rel, _ := filepath.Rel(dir, path)
 		info, err := d.Info()
-		if err != nil || info.Size() > 10*1024*1024 {
-			return nil // skip files > 10MB
+		if err != nil {
+			return nil
+		}
+		if info.Size() > MaxGroupFileSize {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: skipped (%.1f MB exceeds %d MB limit)",
+				rel, float64(info.Size())/(1024*1024), MaxGroupFileSize/(1024*1024),
+			))
+			return nil
 		}
 
 		content, err := os.ReadFile(path)
@@ -140,7 +168,7 @@ func walkGroupDir(dir string) ([]BundleFile, error) {
 		files = append(files, BundleFile{Path: rel, Content: content})
 		return nil
 	})
-	return files, err
+	return files, warnings, err
 }
 
 // readTasks returns scheduled tasks in normalized bundle format.

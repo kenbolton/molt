@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
 import (
@@ -39,6 +40,9 @@ type archNanoclawFields struct {
 }
 
 // doImport implements the import protocol for the NanoClaw driver.
+// Import is best-effort atomic: groups and DB inserts are wrapped in a single
+// transaction. On failure, the transaction is rolled back and any filesystem
+// paths created so far are removed. Sessions are imported after commit (best-effort).
 func doImport(destDir string, bundleRaw interface{}, renames map[string]string) {
 	// Re-marshal bundleRaw (map[string]interface{}) into our typed importBundle.
 	data, err := json.Marshal(bundleRaw)
@@ -70,9 +74,32 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 		return
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		writeError("DB_ERROR", fmt.Sprintf("failed to begin transaction: %v", err))
+		return
+	}
+
+	// createdPaths tracks filesystem paths written so far, for cleanup on failure.
+	var createdPaths []string
+	cleanup := func() {
+		tx.Rollback()
+		for _, p := range createdPaths {
+			os.RemoveAll(p)
+		}
+	}
+
 	var warnings []string
 	imported := 0
 
+	// pendingSymlinks holds symlink groups deferred to pass 2.
+	var pendingSymlinks []struct {
+		destSlug string
+		cfgName  string
+		arch     archNanoclawFields
+	}
+
+	// Pass 1: process real (non-symlink) groups — filesystem writes + DB inserts.
 	for _, slug := range b.Manifest.Groups {
 		destSlug := slug
 		if r, ok := renames[slug]; ok {
@@ -92,10 +119,21 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 			_ = json.Unmarshal(cfg.ArchNanoclaw, &arch)
 		}
 
+		// Defer symlink groups to pass 2 (their targets may not exist yet).
+		if arch.SymlinkTarget != "" {
+			pendingSymlinks = append(pendingSymlinks, struct {
+				destSlug string
+				cfgName  string
+				arch     archNanoclawFields
+			}{destSlug, cfg.Name, arch})
+			continue
+		}
+
 		destGroupDir := filepath.Join(groupsDir, destSlug)
 
 		// Collision check: filesystem.
 		if _, err := os.Lstat(destGroupDir); err == nil {
+			cleanup()
 			write(map[string]interface{}{"type": "collision", "slug": destSlug})
 			return
 		}
@@ -103,32 +141,22 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 		// Collision check: DB (only for groups with JIDs).
 		if cfg.JID != "" {
 			var count int
-			_ = db.QueryRow(
+			_ = tx.QueryRow(
 				`SELECT COUNT(*) FROM registered_groups WHERE folder = ?`, destSlug,
 			).Scan(&count)
 			if count > 0 {
+				cleanup()
 				write(map[string]interface{}{"type": "collision", "slug": destSlug})
 				return
 			}
 		}
 
-		// Filesystem: symlink or write files.
-		if arch.SymlinkTarget != "" {
-			destTarget := arch.SymlinkTarget
-			if r, ok := renames[arch.SymlinkTarget]; ok {
-				destTarget = r
-			}
-			if err := os.Symlink(destTarget, destGroupDir); err != nil {
-				warnings = append(warnings, fmt.Sprintf(
-					"%s: symlink → %s failed: %v", destSlug, destTarget, err))
-			}
-		} else {
-			// Write all group files from the bundle.
-			fileWarnings := b.writeGroupFiles(slug, destGroupDir)
-			warnings = append(warnings, fileWarnings...)
-			// Ensure logs dir exists even if bundle had none.
-			_ = os.MkdirAll(filepath.Join(destGroupDir, "logs"), 0o755)
-		}
+		// Write all group files from the bundle.
+		fileWarnings := b.writeGroupFiles(slug, destGroupDir)
+		warnings = append(warnings, fileWarnings...)
+		// Ensure logs dir exists even if bundle had none.
+		_ = os.MkdirAll(filepath.Join(destGroupDir, "logs"), 0o755)
+		createdPaths = append(createdPaths, destGroupDir)
 
 		// DB insert for registered groups (those that have a JID).
 		// Global group and any future JID-less entries skip this.
@@ -138,7 +166,7 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 				s := string(arch.ContainerConfig)
 				containerConfigStr = &s
 			}
-			_, err = db.Exec(`
+			if _, err = tx.Exec(`
 				INSERT INTO registered_groups
 					(jid, name, folder, trigger_pattern, agent_name,
 					 requires_trigger, is_main, is_default_dm, container_config)
@@ -146,10 +174,10 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 			`,
 				cfg.JID, cfg.Name, destSlug, cfg.Trigger, cfg.AgentName,
 				cfg.RequiresTrigger, cfg.IsMain, arch.IsDefaultDM, containerConfigStr,
-			)
-			if err != nil {
-				warnings = append(warnings, fmt.Sprintf("%s: DB insert failed: %v", destSlug, err))
-				continue
+			); err != nil {
+				cleanup()
+				writeError("DB_ERROR", fmt.Sprintf("%s: DB insert failed: %v", destSlug, err))
+				return
 			}
 		}
 
@@ -160,9 +188,52 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 		imported++
 	}
 
-	// Import scheduled tasks.
+	// Pass 2: process symlink groups — all real targets should now exist on disk.
+	for _, pending := range pendingSymlinks {
+		destTarget := pending.arch.SymlinkTarget
+		if r, ok := renames[pending.arch.SymlinkTarget]; ok {
+			destTarget = r
+		}
+		destGroupDir := filepath.Join(groupsDir, pending.destSlug)
+
+		// Validate that the target is a real directory (not another symlink).
+		// This catches missing targets and circular chains (A→B, B→A).
+		targetPath := filepath.Join(groupsDir, destTarget)
+		fi, err := os.Lstat(targetPath)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: symlink target %q not found — skipped", pending.destSlug, destTarget))
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: symlink target %q is itself a symlink — skipped to avoid circular chain",
+				pending.destSlug, destTarget))
+			continue
+		}
+		if !fi.Mode().IsDir() {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: symlink target %q is not a directory — skipped", pending.destSlug, destTarget))
+			continue
+		}
+
+		if err := os.Symlink(destTarget, destGroupDir); err != nil {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: symlink → %s failed: %v", pending.destSlug, destTarget, err))
+			continue
+		}
+		createdPaths = append(createdPaths, destGroupDir)
+
+		write(map[string]interface{}{
+			"type":    "progress",
+			"message": fmt.Sprintf("✓ %s (%s) → %s", pending.destSlug, pending.cfgName, destTarget),
+		})
+		imported++
+	}
+
+	// Import scheduled tasks within the transaction.
 	if tasksData, ok := b.fileContent("tasks.json"); ok {
-		taskCount := importTasks(db, tasksData, renames, &warnings)
+		taskCount := importTasks(tx, tasksData, renames, &warnings)
 		if taskCount > 0 {
 			write(map[string]interface{}{
 				"type":    "progress",
@@ -171,7 +242,14 @@ func doImport(destDir string, bundleRaw interface{}, renames map[string]string) 
 		}
 	}
 
-	// Import sessions (best-effort: session IDs may not be valid in target).
+	// Commit. On failure, roll back DB and remove any filesystem paths created.
+	if err := tx.Commit(); err != nil {
+		cleanup()
+		writeError("DB_ERROR", fmt.Sprintf("transaction commit failed: %v", err))
+		return
+	}
+
+	// Import sessions (best-effort, post-commit: session IDs may not be valid in target).
 	sessionCount := b.importSessions(destDir, renames, &warnings)
 	if sessionCount > 0 {
 		write(map[string]interface{}{
@@ -208,7 +286,7 @@ func (b *importBundle) fileContent(path string) ([]byte, bool) {
 	}
 	content, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return []byte(encoded), true // fallback: treat as raw text
+		return nil, false
 	}
 	return content, true
 }
@@ -227,7 +305,8 @@ func (b *importBundle) writeGroupFiles(slug, destDir string) []string {
 		}
 		content, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
-			content = []byte(encoded) // fallback: raw text
+			warnings = append(warnings, fmt.Sprintf("%s: skipped (invalid base64)", rel))
+			continue
 		}
 		destPath := filepath.Join(destDir, rel)
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
@@ -241,9 +320,9 @@ func (b *importBundle) writeGroupFiles(slug, destDir string) []string {
 	return warnings
 }
 
-// importTasks inserts scheduled tasks from tasks.json into the dest DB.
+// importTasks inserts scheduled tasks from tasks.json into the dest DB transaction.
 // Returns the count of successfully inserted tasks.
-func importTasks(db *sql.DB, data []byte, renames map[string]string, warnings *[]string) int {
+func importTasks(tx *sql.Tx, data []byte, renames map[string]string, warnings *[]string) int {
 	var tasks []map[string]interface{}
 	if err := json.Unmarshal(data, &tasks); err != nil {
 		*warnings = append(*warnings, fmt.Sprintf("tasks.json parse failed: %v", err))
@@ -252,7 +331,7 @@ func importTasks(db *sql.DB, data []byte, renames map[string]string, warnings *[
 
 	// Check if table exists; older installs may not have it.
 	var tableExists int
-	_ = db.QueryRow(
+	_ = tx.QueryRow(
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='scheduled_tasks'`,
 	).Scan(&tableExists)
 	if tableExists == 0 {
@@ -288,7 +367,7 @@ func importTasks(db *sql.DB, data []byte, renames map[string]string, warnings *[
 			targetJIDVal = targetGroupJID
 		}
 
-		_, err := db.Exec(`
+		_, err := tx.Exec(`
 			INSERT OR IGNORE INTO scheduled_tasks
 				(id, group_folder, prompt, schedule_type, schedule_value,
 				 context_mode, active, created_at, target_group_jid)
@@ -334,7 +413,8 @@ func (b *importBundle) importSessions(destDir string, renames map[string]string,
 
 		content, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
-			content = []byte(encoded)
+			*warnings = append(*warnings, fmt.Sprintf("session %s/%s: skipped (invalid base64)", destSlug, rel))
+			continue
 		}
 
 		destPath := filepath.Join(sessionsBase, destSlug, rel)
