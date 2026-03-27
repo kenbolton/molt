@@ -35,9 +35,10 @@
 
 ## v1.0 — Sync and recovery
 
-- [ ] `molt sync` — scheduled backup daemon with incremental deltas (see [spec/SYNC.md](SYNC.md))
-- [ ] `molt restore` — point-in-time recovery from any saved bundle chain
-- [ ] Destination adapters: `file://`, `s3://`, `ssh://`
+- [x] `molt sync` — scheduled backup daemon with incremental deltas (see [spec/SYNC.md](SYNC.md))
+- [x] `molt restore` — point-in-time recovery from any saved bundle chain
+- [x] Destination adapters: `file://`, `ssh://`
+- [ ] Destination adapter: `s3://`
 - [ ] `molt sync install` — launchd / systemd user unit
 
 ## Future

@@ -62,7 +62,9 @@ molt import → bundle.Load() → driver.Import()
 **Key packages:**
 - `src/bundle/` — `Bundle` struct (in-memory .molt file), `Assembler` (NDJSON → Bundle), tar read/write
 - `src/driver/` — driver discovery, version probe, `Export()`/`Import()` protocol wrappers
-- `src/cmd/` — Cobra CLI commands (`export`, `import`, `inspect`, `upgrade`, `archs`, `completion`)
+- `src/cmd/` — Cobra CLI commands (`export`, `import`, `inspect`, `upgrade`, `archs`, `completion`, `sync`, `restore`)
+- `src/dest/` — destination adapters (`file://`, `ssh://`); bundle naming helpers
+- `src/sync/` — sync config/state, schedule parsing, `RunOnce()`, daemon lifecycle
 - `drivers/nanoclaw/` — standalone NanoClaw driver binary
 
 ## Driver protocol
@@ -92,6 +94,15 @@ A `.molt` file is a gzipped tar. All file content is base64-encoded (Go's `encod
 
 Import atomicity: groups and DB inserts are wrapped in a single transaction with filesystem cleanup on failure. Sessions and skills are post-commit and failures are warnings, not errors.
 
+## sync / restore internals
+
+- `Driver.Export()` accepts a `since string` param — pass `""` for full exports, ISO 8601 timestamp for delta
+- `Manifest` carries `bundle_type`, `base_bundle`, `since` for delta bundles
+- `dest.Adapter` interface: `Put/Get/List`; `fileAdapter` also implements `Delete` for pruning
+- Bundle naming: `<arch>-<YYYYMMDDTHHmmssZ>-full.molt` / `<arch>-<ts>-delta-<hash8>.molt`
+- Daemon re-execs itself as `molt sync run --loop`; SIGTERM finishes current export before exit
+- State is written atomically (temp file + rename) after each successful run
+
 ## Spec
 
-`spec/BUNDLE.md` and `spec/DRIVER.md` are the authoritative specs. Keep them in sync when adding new message types or bundle fields.
+`spec/BUNDLE.md`, `spec/DRIVER.md`, and `spec/SYNC.md` are the authoritative specs. Keep them in sync when adding new message types or bundle fields.

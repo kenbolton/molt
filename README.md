@@ -135,6 +135,25 @@ molt upgrade <bundle>           Upgrade bundle to current format version
 
 molt archs                      List installed drivers and their versions
 
+molt sync init <destination>    Write .molt-sync.json with defaults
+  --arch <name>                 Override arch detection
+  --source <dir>                Source directory (default: cwd)
+  --schedule <expr>             Cron expression or interval (default: "0 * * * *")
+  --full-every <dur>            How often to write a full bundle (default: "7d")
+  --force                       Overwrite existing config
+
+molt sync start                 Launch the background daemon
+molt sync stop                  Stop the daemon gracefully
+molt sync status                Show daemon state, last run, next run, bundle count
+molt sync run                   Trigger an immediate sync (foreground)
+molt sync list                  List all saved bundles at the destination
+
+molt restore                    Restore from a saved bundle chain
+  --from <uri>                  Destination URI (default: from .molt-sync.json)
+  --at <timestamp>              Restore to this point in time (ISO 8601; default: latest)
+  --to <dir>                    Installation directory to restore into (default: cwd)
+  --dry-run                     Print the bundle chain without importing
+
 molt completion <bash|zsh|fish> Generate shell completion scripts
   --install                     Install to the appropriate path for the shell
 
@@ -144,6 +163,26 @@ molt <source> <dest>            Export + import in one step
   --exclude <slug>              Exclude group slug (repeatable)
   --dry-run                     Dry run
 ```
+
+## Backup and restore
+
+`molt sync` exports your installation to a destination on a schedule. The first run is a full bundle; subsequent runs within `full_every` (default: weekly) are delta bundles containing only what changed.
+
+```bash
+# Set up and start
+molt sync init file:///backups/nanoclaw --source ~/src/nanoclaw
+molt sync run           # test a manual sync
+molt sync start         # launch background daemon
+molt sync status        # check daemon state
+
+# Restore to latest
+molt restore --from file:///backups/nanoclaw --to ~/src/nanoclaw
+
+# Restore to a point in time
+molt restore --from file:///backups/nanoclaw --at 2026-03-27T10:00:00Z --dry-run
+```
+
+Destinations: `file://` (local or network-mounted), `ssh://` (via rsync). S3 support planned for v1.0 polish.
 
 ## Status
 
