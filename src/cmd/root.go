@@ -11,7 +11,11 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "molt",
 	Short: "Migrate claw agent installations between architectures",
-	Long: `molt — portable migration for claw agent architectures.
+	Long: `
+     ___
+    /   \  ---.
+   ( ( ) )--o-->  molt
+    \___/  ---'   Universal Claw Agent Migration Tool
 
 Move your agents, groups, memory, skills, and config between
 NanoClaw, OpenClaw, ZeptoClaw, PicoClaw, and others.
