@@ -1,0 +1,13 @@
+<svg width="200" height="200" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Legacy Shell (Dashed/Ghosted) -->
+  <path d="M15 35C15 15 45 15 45 35V65C45 85 15 85 15 65V35Z" stroke="#D1D1D1" stroke-width="4" stroke-dasharray="4 3"/>
+  
+  <!-- Current Shell (Solid) -->
+  <path d="M55 35C55 15 85 15 85 35V65C85 85 55 85 55 65V35Z" fill="#E2725B"/>
+  
+  <!-- Migration Arrow -->
+  <path d="M35 50H65M65 50L58 43M65 50L58 57" stroke="#00ADD8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- The Agent (The Pearl/Core) -->
+  <circle cx="60" cy="50" r="6" fill="#FFFFFF" stroke="#00ADD8" stroke-width="2"/>
+</svg>
