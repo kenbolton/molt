@@ -1,276 +1,226 @@
-# molt sync — Spec
+# molt sync — Scheduled Backup Spec
 
-`molt sync` is continuous, scheduled, incremental backup for claw agent
-installations. Where `molt export` is a one-shot operation, `molt sync`
-runs as a daemon — watching for changes, exporting deltas, and maintaining
-a recoverable snapshot store at a configurable destination.
+> v0.1.0-draft
 
-It is the disaster recovery story for production claw deployments.
+`molt sync` is a one-way backup daemon. It exports `.molt` bundles from a running installation to a configurable destination on a cron or interval schedule. The first export is a full bundle; subsequent exports are delta bundles containing only what changed. `molt restore` assembles any full + delta chain to reach a specific point in time.
 
----
-
-## Commands
-
-```
-molt sync start                          Start the sync daemon for the default installation
-  --source <dir>                         Source installation directory (default: auto-detect)
-  --arch <name>                          Source architecture (default: auto-detect)
-  --dest <path>                          Destination: local dir, s3://, sftp://, rsync:// URI
-  --interval <duration>                  How often to sync: 1h, 6h, 24h (default: 6h)
-  --full-every <N>                       Full export every N syncs; others are incremental (default: 7)
-  --retain <N>                           Keep N snapshots at dest; prune older ones (default: 14)
-  --on-change                            Also sync immediately when files change (fsnotify)
-  --daemonize                            Fork to background and write PID to ~/.molt/sync.pid
-
-molt sync stop                           Stop the running daemon
-molt sync status                         Show daemon state, last/next run, dest health
-molt sync now                            Run a sync immediately (daemon must be running)
-molt sync restore <snapshot>             Restore a snapshot to the source installation
-  --dry-run                              Show what would be restored, make no changes
-  --group <slug>                         Restore only one group
-molt sync list                           List available snapshots at the configured dest
-molt sync log                            Tail the sync log (follows if daemon is running)
-```
+Scope: one-way export for backup and disaster recovery. Two-way sync and cross-arch mirroring are explicitly out of scope.
 
 ---
 
-## Destination URIs
+## CLI
 
-| Scheme | Example | Notes |
-|--------|---------|-------|
-| Local dir | `/Volumes/Backup/nanoclaw` | Fastest; no auth needed |
-| S3 | `s3://my-bucket/nanoclaw-backup` | Requires AWS credentials in env or `~/.aws` |
-| SFTP | `sftp://user@host/path/to/backup` | SSH key auth; host must be in known_hosts |
-| rsync | `rsync://user@host::module/path` | rsync daemon protocol |
-| rsync+ssh | `rsync+ssh://user@host/path` | rsync over SSH |
+```
+molt sync init <destination>    write .molt-sync.json with defaults, print next steps
+molt sync start                 launch the daemon (daemonizes, writes PID file)
+molt sync stop                  stop the daemon gracefully (SIGTERM, waits for in-progress export)
+molt sync status                show daemon state, last run, next run, bundle count
+molt sync run                   trigger an immediate sync (foreground, exits when done)
+molt sync list                  list all saved bundles at the destination with timestamps
 
-Credentials are never stored in the sync config — they come from the environment
-or standard credential stores (AWS, SSH agent).
+molt restore                    restore from the latest bundle at the configured destination
+  --at   <timestamp>            restore to this point in time (ISO 8601; default: latest)
+  --from <destination>          destination URI to restore from (default: from .molt-sync.json)
+  --to   <source-dir>           installation to restore into (default: auto-detect)
+  --dry-run                     print the bundle chain that would be applied without importing
+```
+
+`init` is idempotent — safe to re-run, will not overwrite existing config unless `--force` is passed.
 
 ---
 
-## Snapshot layout at destination
+## Configuration
 
-Each sync writes a dated snapshot alongside a `latest` symlink:
+Config is looked up in order:
 
-```
-<dest>/
-├── latest -> 2026-03-27T06:00:00Z/
-├── 2026-03-27T06:00:00Z/
-│   ├── manifest.json         # snapshot metadata
-│   └── bundle.molt           # full or incremental molt bundle
-├── 2026-03-26T06:00:00Z/
-│   ├── manifest.json
-│   └── bundle.molt
-└── ...
-```
-
-### Snapshot manifest.json
+1. `<source_dir>/.molt-sync.json` — co-located with the installation (commit this)
+2. `~/.molt/sync.json` — global fallback
 
 ```json
 {
-  "created_at": "2026-03-27T06:00:00Z",
-  "source_dir": "/Users/you/src/nanoclaw",
+  "destination": "s3://my-bucket/backups/nanoclaw",
+  "schedule": "0 * * * *",
+  "full_every": "7d",
+  "retention": {
+    "keep_bundles": 168,
+    "keep_full": 4
+  },
   "arch": "nanoclaw",
-  "arch_version": "1.4.2",
-  "molt_version": "0.2.0",
-  "type": "incremental",
-  "base_snapshot": "2026-03-26T06:00:00Z",
-  "groups": ["main", "dev", "family"],
-  "size_bytes": 142832,
-  "checksum": "sha256:abc123..."
+  "source_dir": ""
 }
 ```
 
-`type` is `"full"` or `"incremental"`. Incremental snapshots record their
-`base_snapshot` so `molt sync restore` can reconstruct the full state by
-replaying the chain.
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `destination` | string | — | Destination URI (required) |
+| `schedule` | string | `"0 * * * *"` | Cron expression or interval (`"1h"`, `"15m"`) |
+| `full_every` | string | `"7d"` | How often to write a full bundle; in between: delta |
+| `retention.keep_bundles` | int | `168` | Total bundles to retain; oldest pruned first |
+| `retention.keep_full` | int | `4` | Minimum full bundles always retained regardless of age |
+| `arch` | string | auto-detect | Driver arch name |
+| `source_dir` | string | `""` | Installation path (empty = auto-detect) |
+
+`keep_full` acts as a floor: even if `keep_bundles` would prune a full bundle, it is kept until `keep_full` is satisfied.
 
 ---
 
-## Incremental export
+## Destinations
 
-Incremental syncs export only what changed since the last full or incremental
-snapshot. The driver compares:
+| Scheme | Example | Notes |
+|--------|---------|-------|
+| `file://` | `file:///backups/nanoclaw` | Local or network-mounted path |
+| `s3://` | `s3://bucket/prefix` | S3 or S3-compatible (Cloudflare R2, Minio); credentials via standard env vars or `~/.aws/credentials` |
+| `ssh://` | `ssh://host/path` | Via rsync; uses `ssh-agent` |
 
-- Group `CLAUDE.md` and files — mtime-based change detection
-- Conversations — new files only (append-only by convention)
-- Scheduled tasks — full list (small, always included)
-- Skills — compare installed set against last snapshot manifest
-- Sessions — skipped in incremental; sessions are large and volatile
+All adapters implement three operations:
 
-The delta bundle is a valid `.molt` file with a `partial: true` flag in its
-manifest. `molt sync restore` knows to merge it onto a base.
+```
+Put(name string, r io.Reader) error
+Get(name string, w io.Writer) error
+List() ([]BundleEntry, error)
+```
 
-Every Nth sync (`--full-every`, default 7) exports a complete snapshot
-regardless of changes. This bounds the restore chain length and provides
-a clean recovery point.
+`BundleEntry` carries `Name`, `Timestamp`, `Type` (`"full"` or `"delta"`), `Size`, and `BaseHash`.
+
+---
+
+## Bundle naming
+
+```
+<arch>-<timestamp>-full.molt
+<arch>-<timestamp>-delta-<base-hash8>.molt
+```
+
+`<timestamp>` is `YYYYMMDDTHHmmssZ`. `<base-hash8>` is the first 8 hex characters of the SHA-256 of the base full bundle.
+
+Example sequence (hourly schedule, weekly full):
+
+```
+nanoclaw-20260327T090000Z-full.molt
+nanoclaw-20260327T100000Z-delta-3f8a1c2d.molt
+nanoclaw-20260327T110000Z-delta-3f8a1c2d.molt
+nanoclaw-20260327T120000Z-delta-3f8a1c2d.molt
+  ...
+nanoclaw-20260403T090000Z-full.molt         ← weekly full resets base
+nanoclaw-20260403T100000Z-delta-9b4e72a1.molt
+```
+
+All deltas between two consecutive full bundles share the same `<base-hash8>`.
+
+---
+
+## Incremental mechanism
+
+### State file
+
+`<source_dir>/.molt-sync-state.json` — written atomically after each successful export.
+
+```json
+{
+  "last_sync_at": "2026-03-27T10:00:00Z",
+  "last_full_at": "2026-03-27T09:00:00Z",
+  "last_bundle": "nanoclaw-20260327T100000Z-delta-3f8a1c2d.molt",
+  "base_hash": "3f8a1c2d",
+  "bundles": [
+    {
+      "name": "nanoclaw-20260327T090000Z-full.molt",
+      "timestamp": "2026-03-27T09:00:00Z",
+      "type": "full",
+      "hash": "3f8a1c2d"
+    },
+    {
+      "name": "nanoclaw-20260327T100000Z-delta-3f8a1c2d.molt",
+      "timestamp": "2026-03-27T10:00:00Z",
+      "type": "delta",
+      "base": "3f8a1c2d"
+    }
+  ]
+}
+```
+
+### Export flow
+
+On each tick:
+
+1. Read `.molt-sync-state.json`; determine whether this run is a full or delta based on `last_full_at` and `full_every`
+2. Call the driver with `export_request`; for delta runs, include `"since": "<last_sync_at>"` — the driver returns only content modified after that timestamp
+3. Assemble the bundle; for delta bundles, add to `manifest.json`:
+   ```json
+   {
+     "bundle_type": "delta",
+     "base_bundle": "3f8a1c2d",
+     "since": "2026-03-27T09:00:00Z"
+   }
+   ```
+   Full bundles use `"bundle_type": "full"` and omit `base_bundle` and `since`.
+4. Upload to destination via adapter `Put`
+5. Write updated state file atomically
+6. Prune bundles at destination per retention policy (delete oldest when `keep_bundles` exceeded, respecting `keep_full` floor)
+
+If `since` is not supported by a driver, it returns all content and molt falls back to a full bundle for that run.
 
 ---
 
 ## Restore
 
-`molt sync restore` reconstructs a point-in-time state from the snapshot store.
-
 ```
-molt sync restore latest                         # most recent snapshot
-molt sync restore 2026-03-26T06:00:00Z           # specific timestamp
-molt sync restore latest --group dev             # restore one group only
-molt sync restore 2026-03-26T06:00:00Z --dry-run # preview
+molt restore --at 2026-03-27T10:30 --from s3://my-bucket/backups/nanoclaw --to ~/src/nanoclaw
 ```
 
-Restore process:
-1. Locate the named snapshot
-2. If incremental, walk back to the base full snapshot
-3. Apply full snapshot, then replay incremental deltas in order
-4. Call `molt import` with the reconstructed bundle against the source installation
-5. Existing data is not wiped before restore — `molt import` merge semantics apply
-   (slug collision → error, requires `--rename` or `--overwrite`)
+Steps:
 
-`--overwrite` flag on restore: wipe the destination group before importing.
-Required for true point-in-time recovery. Default is merge (safer for partial
-restores).
+1. `List()` all bundles at the destination
+2. Find the latest full bundle whose timestamp is at or before `--at`
+3. Collect all delta bundles whose `base` matches that full bundle's hash and whose timestamp is ≤ `--at`
+4. Sort deltas by timestamp ascending
+5. Assemble: start with the full bundle, layer each delta in order (later content wins per group/conversation)
+6. Run `molt import --overwrite` into `--to`
 
----
-
-## Daemon behavior
-
-The sync daemon (`molt sync start --daemonize`) runs as a background process:
-
-- Writes PID to `~/.molt/sync.pid`; `molt sync stop` sends SIGTERM
-- Logs to `~/.molt/sync.log` (tailed by `molt sync log`)
-- Runs the sync on the configured interval using an internal ticker
-- With `--on-change`: also watches source dirs with fsnotify and triggers
-  an incremental sync within 30s of any write (debounced)
-- On SIGHUP: re-reads config and resets the ticker without stopping
-- On destination write failure: retries 3× with exponential backoff, then
-  logs error and continues (does not crash)
-
-Non-daemon mode (`molt sync start` without `--daemonize`) runs in the
-foreground, logging to stderr. Useful for testing or running under a
-process supervisor (launchd, systemd, supervisor).
-
-### launchd plist (macOS)
-
-`molt sync install` (planned) writes a launchd plist to
-`~/Library/LaunchAgents/com.clawops.molt-sync.plist` and loads it.
-`molt sync uninstall` removes and unloads it.
-
-### systemd unit (Linux)
-
-`molt sync install` writes a user systemd unit to
-`~/.config/systemd/user/molt-sync.service` and enables it.
-
----
-
-## Configuration file
-
-`molt sync start` writes its config to `~/.molt/sync.json` on first run.
-Subsequent invocations (including `molt sync now`) read from there.
-
-```json
-{
-  "source_dir": "/Users/you/src/nanoclaw",
-  "arch": "nanoclaw",
-  "dest": "s3://my-bucket/nanoclaw-backup",
-  "interval": "6h",
-  "full_every": 7,
-  "retain": 14,
-  "on_change": false
-}
-```
-
-Override any field at runtime by passing the corresponding flag — the flag
-takes precedence over the config file but does not overwrite it.
-
----
-
-## Status output
+With `--dry-run`:
 
 ```
-$ molt sync status
-
-Daemon:    running (pid 12345)
-Source:    /Users/you/src/nanoclaw  (nanoclaw 1.4.2)
-Dest:      s3://my-bucket/nanoclaw-backup  ✓ reachable
-Interval:  6h  (on-change: off)
-
-Last run:  2026-03-27 06:00 EDT  —  incremental  142KB  2.1s  ✓
-Next run:  2026-03-27 12:00 EDT  (in 3h 42m)
-
-Snapshots: 8 stored  (oldest: 2026-03-23)  total 4.2MB
+Restore chain for 2026-03-27T10:30:
+  [full]  nanoclaw-20260327T090000Z-full.molt         (2026-03-27 09:00)
+  [delta] nanoclaw-20260327T100000Z-delta-3f8a1c2d.molt (2026-03-27 10:00)
+  2 bundles · 3 groups · ~42MB assembled
+  (dry run — no changes made)
 ```
 
 ---
 
-## ADR: Key design decisions
+## Daemon
 
-### Incremental over always-full
+`molt sync start` forks a background process and writes its PID to `~/.molt/sync.pid`.
 
-Full exports of large installations (many conversations, large session caches)
-can be slow and expensive on remote destinations. Incremental reduces sync
-time from minutes to seconds on typical runs. The `--full-every` floor ensures
-the chain never grows unbounded and recovery always has a clean base.
+On SIGTERM: finishes any in-progress export, then exits. State is written before the process exits so the next startup resumes correctly.
 
-### Reuse molt bundle format
+`molt sync status` reads `.molt-sync-state.json` and the PID file only — no IPC required:
 
-Snapshots are valid `.molt` files. This means `molt inspect`, `molt diff`, and
-`molt import` all work on sync snapshots without modification. No new format
-needed. The only additions are the outer snapshot manifest and the `partial`
-flag on incremental bundles.
-
-### Daemon over cron
-
-A daemon with `--on-change` support captures changes within 30s of a write,
-which is much tighter than any practical cron interval. It also owns its own
-retry logic, log, and status — no cron log archaeology needed. For users who
-prefer cron, `molt sync now` is scriptable.
-
-### Merge semantics on restore (not wipe)
-
-Wiping the destination before restore is destructive and irreversible. Default
-merge semantics mean a partial restore (one group, one session) is safe and
-useful. `--overwrite` opts into the destructive path explicitly.
-
-### Credentials from environment only
-
-Storing AWS keys or SSH credentials in `~/.molt/sync.json` is a footgun.
-`molt sync` reads credentials from the standard places each tool ecosystem
-expects (AWS SDK, SSH agent) and documents this clearly. No credential
-storage, no credential leaks.
-
----
-
-## Driver protocol extension
-
-`molt sync` uses a new `export_incremental_request` type. Drivers that don't
-implement it return `{"type": "error", "code": "UNSUPPORTED"}`; `molt sync`
-falls back to a full export.
-
-### export_incremental_request
-
-```json
-{
-  "type": "export_incremental_request",
-  "source_dir": "/path/to/install",
-  "since": "2026-03-26T06:00:00Z",
-  "include": ["groups", "tasks", "skills"]
-}
+```
+Daemon:      running (pid 12345)
+Destination: s3://my-bucket/backups/nanoclaw
+Schedule:    0 * * * * (next run in 23m)
+Last sync:   2026-03-27T10:00:00Z (delta, 1.2MB, 0.4s)
+Last full:   2026-03-27T09:00:00Z
+Bundles:     14 stored (4 full, 10 delta)
 ```
 
-- `since` — ISO8601 timestamp; driver returns only items modified after this
-- `include` — categories to export; omit sessions unless explicitly requested
+Platform integration (v1 polish, not in initial implementation):
 
-### Response
-
-Same as `export_request` (see DRIVER.md), with `partial: true` in the bundle
-manifest and `base_since` echoed back.
+- macOS: `molt sync install` writes a launchd plist to `~/Library/LaunchAgents/dev.molt.sync.plist`
+- Linux: `molt sync install` writes a systemd user unit to `~/.config/systemd/user/molt-sync.service`
 
 ---
 
-## Out of scope (v0.1)
+## Error handling
 
-- Encryption at rest (`--encrypt`) — planned for v1
-- Multi-source merge (sync from two installations into one dest) — planned for v1
-- Cloud-native scheduling (Lambda, Cloud Run) — out of scope; use the daemon
-- Conflict resolution on restore — merge semantics only for now; conflicts surface as slug collisions handled by existing molt import logic
+| Failure | Behaviour |
+|---------|-----------|
+| Driver export fails | Log error, retain previous state, retry on next tick |
+| Destination write fails | Preserve local temp bundle, retry upload on next tick; do not advance state |
+| Destination pruning fails | Log warning, continue — stale bundles are harmless |
+| Restore assembly fails | Abort before `molt import` runs; installation unchanged |
+| `molt import` fails | Transactional — no partial state written to disk |
+| State file corrupted | Fall back to full export on next run; log warning |
+
+Errors are written to `<source_dir>/.molt-sync.log` (rotated at 10MB, 3 files kept).
